@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1 python3 src/generate.py --model_id stable-diffusion-v1-5/stable-diffusion-v1-5 --save_dir ./results/yesmix_repmask_r32b8 --lora_path /mnt/bn/ryh-hl-0/repo/paper/exps/laion_212k_yesmix/exp_repmask_r32_b8_u1e-5_t1e-5_constant/weights/replora_s30000.safetensors  --lora_strength 1
