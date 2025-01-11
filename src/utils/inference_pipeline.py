@@ -12,13 +12,23 @@ from peft import LoraModel, LoraConfig, set_peft_model_state_dict
 from typing import Union, List
 from PIL import Image
 
+
+from utils.lora import (
+    tune_lora_scale,
+    UNET_EXTENDED_TARGET_REPLACE,
+    TEXT_ENCODER_EXTENDED_TARGET_REPLACE,
+    patch_pipe
+)
+
 diffusers_version = int(diffusers.__version__.split('.')[1])
 
 class InferencePipeline:
-    def __init__(self, weight_folder, seed, device):
+    def __init__(self, weight_folder, seed, device, lora_path=None, lora_strength=None):
         self.weight_folder = weight_folder
         self.seed = seed
         self.device = torch.device(device)
+        self.lora_path = lora_path
+        self.lora_strength = lora_strength
 
         self.pipe = None
         self.generator = None
@@ -40,6 +50,16 @@ class InferencePipeline:
                                                                 safety_checker=None, torch_dtype=torch.float16).to(self.device)
         else: # for the versions between 0.15 and 0.19, the benchmark scores are not guaranteed.
             raise Exception(f"Use diffusers version as either ==0.15.0 or >=0.19 (from current {diffusers.__version__})")
+
+        if self.lora_path:
+            patch_pipe(self.pipe, self.lora_path, 
+                patch_unet=False, patch_text=False, patch_ti=False, 
+                unet_target_replace_module=UNET_EXTENDED_TARGET_REPLACE, text_target_replace_module=TEXT_ENCODER_EXTENDED_TARGET_REPLACE,
+            )
+            tune_lora_scale(self.pipe.unet, self.lora_strength)
+            tune_lora_scale(self.pipe.text_encoder, self.lora_strength)
+        
+        self.pipe.to(dtype=torch.float16)
 
         self.generator = torch.Generator(device=self.device).manual_seed(self.seed)
 

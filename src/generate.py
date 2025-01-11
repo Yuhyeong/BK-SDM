@@ -7,6 +7,7 @@ import argparse
 import time
 from utils.inference_pipeline import InferencePipeline
 from utils.misc import get_file_list_from_csv, change_img_size
+import torch
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -23,6 +24,9 @@ def parse_args():
     parser.add_argument("--img_resz", type=int, default=256)
     parser.add_argument("--batch_sz", type=int, default=1)
 
+    parser.add_argument("--lora_path", type=str, default=None)
+    parser.add_argument("--lora_strength", type=float, default=None)
+
     args = parser.parse_args()
     return args
 
@@ -31,14 +35,11 @@ if __name__ == "__main__":
 
     pipeline = InferencePipeline(weight_folder = args.model_id,
                                 seed = args.seed,
-                                device = args.device)
+                                device = args.device,
+                                lora_path = args.lora_path,
+                                lora_strength = args.lora_strength,
+                                )
     pipeline.set_pipe_and_generator()    
-
-    if args.unet_path is not None: # use a separate trained unet for generation        
-        from diffusers import UNet2DConditionModel 
-        unet = UNet2DConditionModel.from_pretrained(args.unet_path, subfolder='unet')
-        pipeline.pipe.unet = unet.half().to(args.device)
-        print(f"** load unet from {args.unet_path}")        
 
     save_dir_src = os.path.join(args.save_dir, f'im{args.img_sz}') # for model's raw output images
     os.makedirs(save_dir_src, exist_ok=True)
@@ -49,21 +50,23 @@ if __name__ == "__main__":
     params_str = pipeline.get_sdm_params()
     
     t0 = time.perf_counter()
-    for batch_start in range(0, len(file_list), args.batch_sz):
-        batch_end = batch_start + args.batch_sz
-        
-        img_names = [file_info[0] for file_info in file_list[batch_start: batch_end]]
-        val_prompts = [file_info[1] for file_info in file_list[batch_start: batch_end]]
-                    
-        imgs = pipeline.generate(prompt = val_prompts,
-                                 n_steps = args.num_inference_steps,
-                                 img_sz = args.img_sz)
+    with torch.no_grad():
+        for batch_start in range(0, len(file_list), args.batch_sz):
+            batch_end = batch_start + args.batch_sz
+            
+            img_names = [file_info[0] for file_info in file_list[batch_start: batch_end]]
+            val_prompts = [file_info[1] for file_info in file_list[batch_start: batch_end]]
+                        
+            imgs = pipeline.generate(prompt = val_prompts,
+                                    n_steps = args.num_inference_steps,
+                                    img_sz = args.img_sz
+                                    )
 
-        for i, (img, img_name, val_prompt) in enumerate(zip(imgs, img_names, val_prompts)):
-            img.save(os.path.join(save_dir_src, img_name))
-            img.close()
-            print(f"{batch_start + i}/{len(file_list)} | {img_name} {val_prompt}")
-        print(f"---{params_str}")
+            for i, (img, img_name, val_prompt) in enumerate(zip(imgs, img_names, val_prompts)):
+                img.save(os.path.join(save_dir_src, img_name))
+                img.close()
+                print(f"{batch_start + i}/{len(file_list)} | {img_name} {val_prompt}")
+            print(f"---{params_str}")
 
     pipeline.clear()
     
